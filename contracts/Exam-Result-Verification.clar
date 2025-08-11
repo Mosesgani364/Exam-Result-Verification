@@ -10,6 +10,9 @@
 (define-constant ERR_INVALID_GRADE (err u108))
 (define-constant ERR_INVALID_EXAM_DATE (err u109))
 (define-constant ERR_DUPLICATE_CERTIFICATE (err u110))
+(define-constant ERR_INVALID_TRANSCRIPT (err u111))
+(define-constant ERR_TRANSCRIPT_NOT_FOUND (err u112))
+(define-constant ERR_COURSE_NOT_FOUND (err u113))
 
 (define-map universities
     { university-id: uint }
@@ -77,6 +80,35 @@
         grade: (string-ascii 10),
         examiner: principal,
         verification-status: (string-ascii 20),
+    }
+)
+
+(define-map transcripts
+    { transcript-id: (string-ascii 100) }
+    {
+        student-id: (string-ascii 50),
+        university-id: uint,
+        semester: (string-ascii 20),
+        academic-year: (string-ascii 10),
+        total-credits: uint,
+        gpa: (string-ascii 10),
+        status: (string-ascii 20),
+        issue-date: (string-ascii 10),
+        issuer: principal,
+        is-final: bool,
+    }
+)
+
+(define-map transcript-courses
+    {
+        transcript-id: (string-ascii 100),
+        course-code: (string-ascii 20),
+    }
+    {
+        course-name: (string-ascii 100),
+        credits: uint,
+        grade: (string-ascii 10),
+        semester: (string-ascii 20),
     }
 )
 
@@ -360,6 +392,126 @@
             (not (get is-revoked certificate))
             (< stacks-block-height (get expiry-block certificate))
         )
+        false
+    )
+)
+
+(define-public (issue-transcript
+        (transcript-id (string-ascii 100))
+        (student-id (string-ascii 50))
+        (university-id uint)
+        (semester (string-ascii 20))
+        (academic-year (string-ascii 10))
+        (total-credits uint)
+        (gpa (string-ascii 10))
+        (issue-date (string-ascii 10))
+        (is-final bool)
+    )
+    (let (
+            (university (unwrap! (map-get? universities { university-id: university-id })
+                ERR_NOT_FOUND
+            ))
+            (student (unwrap! (map-get? students { student-id: student-id }) ERR_NOT_FOUND))
+        )
+        (asserts! (is-eq tx-sender (get admin university)) ERR_UNAUTHORIZED)
+        (asserts! (get is-active university) ERR_INVALID_UNIVERSITY)
+        (asserts! (is-eq (get university-id student) university-id)
+            ERR_INVALID_STUDENT
+        )
+        (asserts!
+            (is-none (map-get? transcripts { transcript-id: transcript-id }))
+            ERR_INVALID_TRANSCRIPT
+        )
+        (map-set transcripts { transcript-id: transcript-id } {
+            student-id: student-id,
+            university-id: university-id,
+            semester: semester,
+            academic-year: academic-year,
+            total-credits: total-credits,
+            gpa: gpa,
+            status: "active",
+            issue-date: issue-date,
+            issuer: tx-sender,
+            is-final: is-final,
+        })
+        (ok true)
+    )
+)
+
+(define-public (add-course-to-transcript
+        (transcript-id (string-ascii 100))
+        (course-code (string-ascii 20))
+        (course-name (string-ascii 100))
+        (credits uint)
+        (grade (string-ascii 10))
+        (semester (string-ascii 20))
+    )
+    (let (
+            (transcript (unwrap! (map-get? transcripts { transcript-id: transcript-id })
+                ERR_TRANSCRIPT_NOT_FOUND
+            ))
+            (university (unwrap!
+                (map-get? universities { university-id: (get university-id transcript) })
+                ERR_NOT_FOUND
+            ))
+        )
+        (asserts! (is-eq tx-sender (get admin university)) ERR_UNAUTHORIZED)
+        (asserts! (get is-active university) ERR_INVALID_UNIVERSITY)
+        (asserts! (is-eq (get status transcript) "active") ERR_INVALID_TRANSCRIPT)
+        (asserts! (> credits u0) ERR_INVALID_GRADE)
+        (map-set transcript-courses {
+            transcript-id: transcript-id,
+            course-code: course-code,
+        } {
+            course-name: course-name,
+            credits: credits,
+            grade: grade,
+            semester: semester,
+        })
+        (ok true)
+    )
+)
+
+(define-public (finalize-transcript (transcript-id (string-ascii 100)))
+    (let (
+            (transcript (unwrap! (map-get? transcripts { transcript-id: transcript-id })
+                ERR_TRANSCRIPT_NOT_FOUND
+            ))
+            (university (unwrap!
+                (map-get? universities { university-id: (get university-id transcript) })
+                ERR_NOT_FOUND
+            ))
+        )
+        (asserts! (is-eq tx-sender (get admin university)) ERR_UNAUTHORIZED)
+        (asserts! (get is-active university) ERR_INVALID_UNIVERSITY)
+        (asserts! (is-eq (get status transcript) "active") ERR_INVALID_TRANSCRIPT)
+        (map-set transcripts { transcript-id: transcript-id }
+            (merge transcript {
+                status: "finalized",
+                is-final: true,
+            })
+        )
+        (ok true)
+    )
+)
+
+(define-read-only (get-transcript (transcript-id (string-ascii 100)))
+    (map-get? transcripts { transcript-id: transcript-id })
+)
+
+(define-read-only (get-transcript-course
+        (transcript-id (string-ascii 100))
+        (course-code (string-ascii 20))
+    )
+    (map-get? transcript-courses {
+        transcript-id: transcript-id,
+        course-code: course-code,
+    })
+)
+
+(define-read-only (is-transcript-finalized (transcript-id (string-ascii 100)))
+    (match (map-get? transcripts { transcript-id: transcript-id })
+        transcript (is-eq (get status transcript) "finalized")
         false
     )
 )
