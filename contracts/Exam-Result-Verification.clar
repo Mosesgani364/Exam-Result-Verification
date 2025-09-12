@@ -13,6 +13,9 @@
 (define-constant ERR_INVALID_TRANSCRIPT (err u111))
 (define-constant ERR_TRANSCRIPT_NOT_FOUND (err u112))
 (define-constant ERR_COURSE_NOT_FOUND (err u113))
+(define-constant ERR_TRANSFER_NOT_FOUND (err u114))
+(define-constant ERR_TRANSFER_ALREADY_PROCESSED (err u115))
+(define-constant ERR_SELF_TRANSFER (err u116))
 
 (define-map universities
     { university-id: uint }
@@ -112,8 +115,27 @@
     }
 )
 
+(define-map certificate-transfer-requests
+    { transfer-id: uint }
+    {
+        certificate-id: (string-ascii 100),
+        current-owner: principal,
+        new-owner: principal,
+        request-block: uint,
+        status: (string-ascii 20),
+        approved-by-owner: bool,
+        approved-by-recipient: bool,
+    }
+)
+
+(define-map certificate-owners
+    { certificate-id: (string-ascii 100) }
+    { owner: principal }
+)
+
 (define-data-var next-university-id uint u1)
 (define-data-var next-request-id uint u1)
+(define-data-var next-transfer-id uint u1)
 (define-data-var verification-fee uint u1000000)
 (define-data-var certificate-validity-period uint u525600)
 
@@ -213,6 +235,7 @@
             is-revoked: false,
             issuer: tx-sender,
         })
+        (map-set certificate-owners { certificate-id: certificate-id } { owner: (get student-address student) })
         (ok true)
     )
 )
@@ -348,6 +371,103 @@
     )
 )
 
+(define-public (initiate-certificate-transfer
+        (certificate-id (string-ascii 100))
+        (new-owner principal)
+    )
+    (let (
+            (certificate (unwrap! (map-get? certificates { certificate-id: certificate-id })
+                ERR_NOT_FOUND
+            ))
+            (current-owner-record (unwrap!
+                (map-get? certificate-owners { certificate-id: certificate-id })
+                ERR_NOT_FOUND
+            ))
+            (current-owner (get owner current-owner-record))
+            (transfer-id (var-get next-transfer-id))
+        )
+        (asserts! (is-eq tx-sender current-owner) ERR_UNAUTHORIZED)
+        (asserts! (not (is-eq current-owner new-owner)) ERR_SELF_TRANSFER)
+        (asserts! (not (get is-revoked certificate)) ERR_CERTIFICATE_REVOKED)
+        (asserts! (< stacks-block-height (get expiry-block certificate))
+            ERR_EXPIRED_CERTIFICATE
+        )
+        (map-set certificate-transfer-requests { transfer-id: transfer-id } {
+            certificate-id: certificate-id,
+            current-owner: current-owner,
+            new-owner: new-owner,
+            request-block: stacks-block-height,
+            status: "pending",
+            approved-by-owner: true,
+            approved-by-recipient: false,
+        })
+        (var-set next-transfer-id (+ transfer-id u1))
+        (ok transfer-id)
+    )
+)
+
+(define-public (accept-certificate-transfer (transfer-id uint))
+    (let (
+            (transfer-request (unwrap!
+                (map-get? certificate-transfer-requests { transfer-id: transfer-id })
+                ERR_TRANSFER_NOT_FOUND
+            ))
+            (certificate-id (get certificate-id transfer-request))
+            (new-owner (get new-owner transfer-request))
+        )
+        (asserts! (is-eq tx-sender new-owner) ERR_UNAUTHORIZED)
+        (asserts! (is-eq (get status transfer-request) "pending")
+            ERR_TRANSFER_ALREADY_PROCESSED
+        )
+        (map-set certificate-transfer-requests { transfer-id: transfer-id }
+            (merge transfer-request {
+                status: "completed",
+                approved-by-recipient: true,
+            })
+        )
+        (map-set certificate-owners { certificate-id: certificate-id } { owner: new-owner })
+        (ok true)
+    )
+)
+
+(define-public (reject-certificate-transfer (transfer-id uint))
+    (let (
+            (transfer-request (unwrap!
+                (map-get? certificate-transfer-requests { transfer-id: transfer-id })
+                ERR_TRANSFER_NOT_FOUND
+            ))
+            (new-owner (get new-owner transfer-request))
+        )
+        (asserts! (is-eq tx-sender new-owner) ERR_UNAUTHORIZED)
+        (asserts! (is-eq (get status transfer-request) "pending")
+            ERR_TRANSFER_ALREADY_PROCESSED
+        )
+        (map-set certificate-transfer-requests { transfer-id: transfer-id }
+            (merge transfer-request { status: "rejected" })
+        )
+        (ok true)
+    )
+)
+
+(define-public (cancel-certificate-transfer (transfer-id uint))
+    (let (
+            (transfer-request (unwrap!
+                (map-get? certificate-transfer-requests { transfer-id: transfer-id })
+                ERR_TRANSFER_NOT_FOUND
+            ))
+            (current-owner (get current-owner transfer-request))
+        )
+        (asserts! (is-eq tx-sender current-owner) ERR_UNAUTHORIZED)
+        (asserts! (is-eq (get status transfer-request) "pending")
+            ERR_TRANSFER_ALREADY_PROCESSED
+        )
+        (map-set certificate-transfer-requests { transfer-id: transfer-id }
+            (merge transfer-request { status: "cancelled" })
+        )
+        (ok true)
+    )
+)
+
 (define-read-only (get-certificate (certificate-id (string-ascii 100)))
     (map-get? certificates { certificate-id: certificate-id })
 )
@@ -391,6 +511,25 @@
             (is-eq (get certificate-hash certificate) expected-hash)
             (not (get is-revoked certificate))
             (< stacks-block-height (get expiry-block certificate))
+        )
+        false
+    )
+)
+
+(define-read-only (get-certificate-owner (certificate-id (string-ascii 100)))
+    (map-get? certificate-owners { certificate-id: certificate-id })
+)
+
+(define-read-only (get-transfer-request (transfer-id uint))
+    (map-get? certificate-transfer-requests { transfer-id: transfer-id })
+)
+
+(define-read-only (is-certificate-transferable (certificate-id (string-ascii 100)))
+    (match (map-get? certificates { certificate-id: certificate-id })
+        certificate (and
+            (not (get is-revoked certificate))
+            (< stacks-block-height (get expiry-block certificate))
+            (is-some (map-get? certificate-owners { certificate-id: certificate-id }))
         )
         false
     )
