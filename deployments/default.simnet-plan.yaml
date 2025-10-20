@@ -1,0 +1,21 @@
+---
+id: 0
+name: default
+network: simnet
+stacks-node: "http://localhost:20443"
+genesis:
+  wallets:
+    - name: deployer
+      address: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+      balance: 100000000000000
+      mnemonic: "exotic lizard fence magic torch spirit eyebrow rail avocado blossom gift winter"
+  contracts: []
+plan:
+  batches:
+    - id: 0
+      transactions:
+        - emulated-contract-publish:
+            contract-name: charity-donation-tracker
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/charity-donation-tracker.clar
+            clarity-version: 2
