@@ -1,20 +1,26 @@
 name: CI
-on: [push]
+on: [push, pull_request]
 jobs:
   tests:
     name: "Exam Result Verification"
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./exam-verification
     steps:
       - name: "Checkout code"
         uses: actions/checkout@v3
-      - name: "Check contract syntax"
-        uses: docker://hirosystems/clarinet:latest
+      - name: "Setup Node.js"
+        uses: actions/setup-node@v3
         with:
-          args: check
+          node-version: '18'
+      - name: "Install Clarinet"
+        run: |
+          curl -L https://github.com/hirosystems/clarinet/releases/latest/download/clarinet-linux-x64.tar.gz | tar xz
+          sudo mv clarinet /usr/local/bin/
+      - name: "Check contract syntax"
+        working-directory: ./exam-verification
+        run: clarinet check
       - name: "Install dependencies"
+        working-directory: ./exam-verification
         run: npm install
       - name: "Run tests"
+        working-directory: ./exam-verification
         run: npm test
