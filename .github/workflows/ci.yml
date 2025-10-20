@@ -7,10 +7,11 @@ jobs:
     steps:
       - name: "Checkout code"
         uses: actions/checkout@v3
-      - name: "Setup Clarinet"
-        uses: hirosystems/clarinet-setup@v1
-        with:
-          clarinet-version: 2.16.0
+      - name: "Install Clarinet via apt"
+        run: |
+          wget -O clarinet.deb https://github.com/hirosystems/clarinet/releases/download/v2.16.0/clarinet_2.16.0_amd64.deb
+          sudo dpkg -i clarinet.deb || sudo apt-get install -f -y
+          clarinet --version
       - name: "Check contract syntax"
         working-directory: ./exam-verification
         run: clarinet check
