@@ -1,29 +1,17 @@
 name: CI
-on: [push, pull_request]
+
+on: [push]
+
 jobs:
   tests:
-    name: "Exam Result Verification"
+    name: "Charity Donation Tracker – Syntax & Deployment Plan Check"
     runs-on: ubuntu-latest
-    steps:
-      - name: "Checkout code"
-        uses: actions/checkout@v3
-      - name: "Install Clarinet via apt"
-        run: |
-          wget -O clarinet.deb https://github.com/hirosystems/clarinet/releases/download/v2.16.0/clarinet_2.16.0_amd64.deb
-          sudo dpkg -i clarinet.deb || sudo apt-get install -f -y
-          clarinet --version
-      - name: "Check contract syntax"
-        working-directory: ./exam-verification
-        run: clarinet check
-      - name: "Setup Node.js"
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: ./exam-verification/package-lock.json
-      - name: "Install dependencies"
-        working-directory: ./exam-verification
-        run: npm ci
-      - name: "Run tests"
-        working-directory: ./exam-verification
-        run: npm test
+
+    steps:  
+      - name: "Checkout repository"  
+        uses: actions/checkout@v4  
+
+      - name: "Validate Clarinet contracts and deployment plan"  
+        uses: docker://hirosystems/clarinet:latest  
+        with:  
+          args: check --deployment-plan-path deployments/default.simnet-plan.yaml
