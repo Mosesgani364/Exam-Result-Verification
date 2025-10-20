@@ -62,6 +62,6 @@ plan:
         - emulated-contract-publish:
             contract-name: exam-verification
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/exam-verification.clar
+            path: "contracts\\exam-verification.clar"
             clarity-version: 1
-      epoch: "2.1"
+      epoch: "2.05"
