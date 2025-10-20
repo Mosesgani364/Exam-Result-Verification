@@ -4,6 +4,9 @@ jobs:
   tests:
     name: "Exam Result Verification"
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./exam-verification
     steps:
       - name: "Checkout code"
         uses: actions/checkout@v3
@@ -11,5 +14,7 @@ jobs:
         uses: docker://hirosystems/clarinet:latest
         with:
           args: check
-        env:
-          WORKING_DIR: ./exam-verification
+      - name: "Install dependencies"
+        run: npm install
+      - name: "Run tests"
+        run: npm test
